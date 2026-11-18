@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apple Calendar – Crear eventos</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;color:#17202a;background:#f5f5f7}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:850px;margin:35px auto;padding:20px}
+.card{background:#fff;border-radius:22px;padding:28px;box-shadow:0 8px 30px #00000012}
+h1{margin:0 0 8px;font-size:30px}.sub{color:#667085;margin-bottom:24px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.full{grid-column:1/-1}
+label{display:block;font-weight:600;margin-bottom:7px}input,textarea,select{width:100%;padding:12px 13px;border:1px solid #d0d5dd;border-radius:12px;font:inherit;background:#fff}
+textarea{min-height:95px;resize:vertical}.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+button{border:0;border-radius:12px;padding:13px 17px;font-weight:700;font-size:15px;cursor:pointer}
+.primary{background:#111827;color:white}.secondary{background:#e9edf3;color:#17202a}.danger{background:#fee4e2;color:#b42318}
+.notice{margin-top:18px;padding:14px;border-radius:12px;background:#f2f4f7;color:#475467;font-size:14px;line-height:1.45}
+.preview{margin-top:22px;background:#f8fafc;border:1px solid #e4e7ec;border-radius:15px;padding:16px;white-space:pre-wrap;font-size:14px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.wrap{margin:10px auto;padding:12px}.card{padding:20px}}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+<h1>📅 Crear evento para Apple Calendar</h1>
+<div class="sub">Crea un evento y añádelo al calendario o genera un archivo .ics compatible con Apple Calendar.</div>
+
+<div class="grid">
+<div class="full"><label for="title">Título *</label><input id="title" placeholder="Ej. Reunión con cliente"></div>
+<div><label for="date">Fecha *</label><input id="date" type="date"></div>
+<div><label for="allDay">Tipo</label><select id="allDay"><option value="no">Evento con horario</option><option value="yes">Todo el día</option></select></div>
+<div id="timeFields"><label>Horario</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><input id="start" type="time"><input id="end" type="time"></div></div>
+<div id="endDateBox" style="display:none"><label for="endDate">Fecha final</label><input id="endDate" type="date"></div>
+<div><label for="calendar">Nombre del calendario</label><input id="calendar" placeholder="Opcional"></div>
+<div class="full"><label for="location">Lugar</label><input id="location" placeholder="Dirección o lugar"></div>
+<div class="full"><label for="notes">Notas</label><textarea id="notes" placeholder="Información adicional..."></textarea></div>
+<div class="full"><label for="url">URL</label><input id="url" type="url" placeholder="https://..."></div>
+</div>
+
+<div class="row">
+<button class="primary" onclick="addCalendar()">➕ Añadir al calendario</button>
+<button class="secondary" onclick="downloadICS()">⬇️ Descargar .ICS</button>
+<button class="secondary" onclick="copyICS()">📋 Copiar ICS</button>
+<button class="danger" onclick="resetForm()">Limpiar</button>
+</div>
+
+<div class="notice"><b>Importante:</b> un navegador no puede escribir directamente en el calendario de Apple sin pasar por un mecanismo autorizado del sistema. El botón «Añadir al calendario» intenta abrir un enlace <code>webcal</code> generado por esta app; en macOS/iPhone, el método más fiable para un evento individual es descargar/abrir el .ics y elegir Apple Calendar.</div>
+<div class="preview" id="preview">Completa los datos para ver una vista previa.</div>
+</div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+function esc(s){return String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n')}
+function utcStamp(d=new Date()){return d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+'T'+pad(d.getUTCHours())+pad(d.getUTCMinutes())+pad(d.getUTCSeconds())+'Z'}
+function localDT(date,time){
+  const [y,m,d]=date.split('-'),[h,min]=time.split(':');
+  return y+m+d+'T'+h+min+'00';
+}
+function getData(){
+ const title=$('title').value.trim(), date=$('date').value, all=$('allDay').value==='yes';
+ if(!title||!date) throw new Error('Indica al menos título y fecha.');
+ let start,end;
+ if(all){
+   start=date.replaceAll('-','');
+   const ed=$('endDate').value||date;
+   const x=new Date(ed+'T00:00:00'); x.setDate(x.getDate()+1);
+   end=x.getFullYear()+pad(x.getMonth()+1)+pad(x.getDate());
+ }else{
+   if(!$('start').value) throw new Error('Indica la hora de inicio.');
+   start=localDT(date,$('start').value);
+   end=$('end').value?localDT(date,$('end').value):localDT(date,$('start').value);
+ }
+ return {title,date,all,start,end,location:$('location').value.trim(),notes:$('notes').value.trim(),url:$('url').value.trim(),calendar:$('calendar').value.trim()};
+}
+function makeICS(){
+ const d=getData(), uid=crypto.randomUUID?crypto.randomUUID():(Date.now()+'@applecalendarapp');
+ let lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Apple Calendar Event Creator//ES//','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT','UID:'+uid,'DTSTAMP:'+utcStamp()];
+ if(d.all){lines.push('DTSTART;VALUE=DATE:'+d.start,'DTEND;VALUE=DATE:'+d.end)}
+ else{
+   lines.push('DTSTART;TZID=Europe/Madrid:'+d.start,'DTEND;TZID=Europe/Madrid:'+d.end);
+ }
+ lines.push('SUMMARY:'+esc(d.title));
+ if(d.location) lines.push('LOCATION:'+esc(d.location));
+ if(d.notes) lines.push('DESCRIPTION:'+esc(d.notes));
+ if(d.url) lines.push('URL:'+esc(d.url));
+ if(d.calendar) lines.push('X-WR-CALNAME:'+esc(d.calendar));
+ lines.push('END:VEVENT','END:VCALENDAR');
+ return lines.join('\r\n')+'\r\n';
+}
+function show(){
+ try{$('preview').textContent=makeICS()}catch(e){$('preview').textContent=e.message}
+}
+document.querySelectorAll('input,textarea,select').forEach(x=>x.addEventListener('input',show));
+$('allDay').addEventListener('change',()=>{
+ const yes=$('allDay').value==='yes'; $('timeFields').style.display=yes?'none':'block'; $('endDateBox').style.display=yes?'block':'none'; show();
+});
+function filename(){
+ let s=($('title').value.trim()||'Evento').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_');
+ return s.slice(0,90)+'.ics';
+}
+function downloadICS(){
+ try{
+   const blob=new Blob([makeICS()],{type:'text/calendar;charset=utf-8'});
+   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename();a.click();
+   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+ }catch(e){alert(e.message)}
+}
+async function copyICS(){
+ try{await navigator.clipboard.writeText(makeICS());alert('Contenido ICS copiado.')}catch(e){alert(e.message)}
+}
+function addCalendar(){
+ try{
+   const ics=makeICS();
+   // On Apple platforms, a data URL can be opened by Calendar/Safari in some configurations.
+   const data='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics);
+   const w=window.open(data,'_blank');
+   if(!w){downloadICS()} 
+ }catch(e){alert(e.message)}
+}
+function resetForm(){
+ $('title').value='';$('location').value='';$('notes').value='';$('url').value='';$('calendar').value='';
+ $('date').value=new Date().toISOString().slice(0,10);$('start').value='09:00';$('end').value='10:00';$('endDate').value=$('date').value;
+ show();
+}
+resetForm();
+</script>
+</body></html>
